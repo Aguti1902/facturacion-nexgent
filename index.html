@@ -244,12 +244,13 @@ const SBDL={async save({filename,data}){const blob=data instanceof Blob?data:new
 async function api(path,opts={}){const {data}=await sb.auth.getSession();const t=data.session?.access_token;const r=await fetch(path,{...opts,headers:{"Content-Type":"application/json",...(opts.headers||{}),Authorization:"Bearer "+t}});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw {status:r.status,code:j.code,message:j.error||("Error "+r.status)};return j;}
 
 /* ---------- Pantalla de acceso ---------- */
-function loginView(msg){$("#main").innerHTML=`<div class="login panel"><h1>Entrar</h1><p class="sub">Te enviamos un enlace de acceso a tu email. Solo los emails autorizados pueden ver los datos.</p>
-  <form id="lf" class="row" style="margin-top:14px"><input id="l_mail" type="email" required autocomplete="email" placeholder="tu@email.com" style="flex:1;min-width:200px"><button class="btn primary" id="l_go">Enviar enlace</button></form>
+function loginView(msg){$("#main").innerHTML=`<div class="login panel"><h1>Entrar</h1><p class="sub">Accede con tu email y contraseña.</p>
+  <form id="lf" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"><label for="l_mail">Email</label><input id="l_mail" type="email" required autocomplete="username">
+  <label for="l_pw">Contraseña</label><input id="l_pw" type="password" required autocomplete="current-password"><button class="btn primary" id="l_go" style="justify-content:center">Entrar</button></form>
   <p class="small muted" id="l_msg" style="margin:12px 0 0">${msg||""}</p></div>`;
   document.querySelectorAll("#nav button").forEach(b=>b.disabled=true);
-  $("#lf").onsubmit=async e=>{e.preventDefault();const b=$("#l_go");b.disabled=true;const {error}=await sb.auth.signInWithOtp({email:$("#l_mail").value.trim(),options:{emailRedirectTo:location.origin,shouldCreateUser:true}});
-    $("#l_msg").textContent=error?("No se pudo enviar: "+error.message):"Listo. Abre el enlace que te acabamos de enviar desde este mismo navegador.";b.disabled=false;};}
+  $("#lf").onsubmit=async e=>{e.preventDefault();const b=$("#l_go");b.disabled=true;$("#l_msg").textContent="";const {error}=await sb.auth.signInWithPassword({email:$("#l_mail").value.trim(),password:$("#l_pw").value});
+    if(error)$("#l_msg").textContent=/invalid/i.test(error.message)?"Email o contraseña incorrectos.":"No se pudo entrar: "+error.message;b.disabled=false;};}
 
 /* ---------- render ---------- */
 function setView(v){S.view=v;try{localStorage.setItem("ng_view",v);}catch(e){}render();window.scrollTo(0,0);}
