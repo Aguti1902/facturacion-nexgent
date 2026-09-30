@@ -2,6 +2,7 @@ import { send, authUser, withImap, readJson } from "../../lib/common.js";
 import { simpleParser } from "mailparser";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import Anthropic from "@anthropic-ai/sdk";
+import { heuristicExtract } from "../../lib/heuristic.js";
 
 const CATS = ["Software y suscripciones","Servidores y hosting","Publicidad","Material y equipos","Servicios profesionales","Viajes y dietas","Formación","Oficina y suministros","Comisiones bancarias","Otros"];
 const r2 = n => Math.round((+n || 0) * 100) / 100;
@@ -11,7 +12,8 @@ async function extract(company, mail, pdfText) {
   const fromName = mail.from?.value?.[0]?.name || mail.from?.value?.[0]?.address || "";
   const dateIso = (mail.date || new Date()).toISOString().slice(0, 10);
   const fallback = { supplier: fromName, cif: "", number: "", date: dateIso, concept: (mail.subject || "").slice(0, 80), category: "Otros", currency: "EUR", base: 0, vat_rate: 21, vat_amount: null, total: 0, reverse_charge: false, is_invoice: true, confidence: "baja" };
-  if (!process.env.ANTHROPIC_API_KEY) return { ...fallback, needsReview: true, noAi: true };
+  const basic = () => ({ ...fallback, ...heuristicExtract({ text: pdfText || mail.text || "", subject: mail.subject || "", fromName, dateIso, companyCif: company.cif || "" }), needsReview: true, noAi: true });
+  if (!process.env.ANTHROPIC_API_KEY) return basic();
   const prompt = `Eres un asistente contable español. Extrae los datos de una factura RECIBIDA por la empresa ${company.name || ""} (CIF ${company.cif || "-"}), a partir del correo y del texto de su PDF adjunto.
 Devuelve SOLO un objeto JSON, sin texto alrededor, con estas claves:
 supplier (razón social del emisor), cif (NIF/VAT del emisor o ""), number (nº de factura o ""), date (fecha de la factura, AAAA-MM-DD), concept (descripción breve, máx. 70 caracteres),
@@ -34,7 +36,7 @@ ${pdfText || "(no hay PDF adjunto o no se pudo leer)"}`;
     const j = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
     return { ...fallback, ...j, needsReview: j.confidence !== "alta" };
   } catch (e) {
-    return { ...fallback, needsReview: true, aiError: String(e.message || e).slice(0, 200) };
+    return { ...basic(), aiError: String(e.message || e).slice(0, 200) };
   }
 }
 
