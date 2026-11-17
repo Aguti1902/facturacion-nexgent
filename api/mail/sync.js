@@ -39,7 +39,9 @@ export default async function handler(req, res) {
           const uids = (await client.search({ since }, { uid: true })) || [];
           const last = uids.slice(-MAX_MSGS);
           if (!last.length) continue;
-          for await (const m of client.fetch(last, { uid: true, envelope: true, flags: true, size: true, internalDate: true }, { uid: true })) {
+          const metas = [];
+          for await (const m of client.fetch(last, { uid: true, envelope: true, flags: true, size: true, internalDate: true }, { uid: true })) metas.push(m);
+          for (const m of metas) {
             const env = m.envelope || {};
             const from = (env.from && env.from[0]) || {};
             let snippet = "", attach = false;
@@ -53,7 +55,7 @@ export default async function handler(req, res) {
             }
             rows.push({
               id: env.messageId || `${folder}:${m.uid}`,
-              received_at: (m.internalDate || env.date || new Date()).toISOString(),
+              received_at: new Date(m.internalDate || env.date || Date.now()).toISOString(),
               from_name: from.name || "",
               from_email: from.address || "",
               to_email: (env.to || []).map(t => t.address).filter(Boolean).join(", "),
