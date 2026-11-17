@@ -25,5 +25,11 @@
   ],
   "regions": [
     "cdg1"
+  ],
+  "crons": [
+    {
+      "path": "/api/mail/sync",
+      "schedule": "0 6 * * *"
+    }
   ]
 }
