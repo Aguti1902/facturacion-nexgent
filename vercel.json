@@ -30,6 +30,10 @@
     {
       "path": "/api/mail/sync",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/mail/invoices",
+      "schedule": "30 6 * * *"
     }
   ]
 }
