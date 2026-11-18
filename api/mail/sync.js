@@ -1,6 +1,7 @@
 // Copia los últimos correos de info@nexgent.io (cabeceras y un extracto) a la tabla mail_inbox de Supabase,
 // para que NexGent OS y sus agentes lleven el control de las solicitudes. No devuelve contenido de correos.
 // Lo llaman el cron diario de Vercel y el agente de Solicitudes; como mucho una sincronización cada 2 minutos.
+// Con ?cuenta=alejandro lee alejandro@nexgent.io (entrada y enviados) para seguir las respuestas de consultoras y clientes.
 import { createClient } from "@supabase/supabase-js";
 import { simpleParser } from "mailparser";
 import { send, withImap, folders, imapConfigured } from "../../lib/common.js";
@@ -18,21 +19,29 @@ export default async function handler(req, res) {
   if (!secret) return send(res, 412, { ok: false, error: "Falta MAIL_INGEST_SECRET en Vercel" });
   const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
 
+  const cuenta = String(req.query?.cuenta || "") === "alejandro" ? "alejandro" : "info";
+  const slot = cuenta === "alejandro" ? 2 : 1;
   const force = String(req.query?.force || "") === "1" && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`;
   if (!force) {
-    const { data: due, error } = await sb.rpc("mail_sync_due", { p_secret: secret, p_min_seconds: 120 });
+    const { data: due, error } = await sb.rpc("mail_sync_due", { p_secret: secret, p_min_seconds: 120, p_slot: slot });
     if (error) return send(res, 500, { ok: false, error: "No se pudo comprobar el estado de la sincronización" });
     if (!due) return send(res, 200, { ok: true, skipped: "Sincronizado hace menos de 2 minutos" });
   }
-  if (!imapConfigured()) {
-    await sb.rpc("ingest_mail", { p_secret: secret, p_rows: [], p_error: "IMAP sin configurar" });
-    return send(res, 412, { ok: false, error: "Falta la contraseña IMAP de info@nexgent.io en Vercel" });
+  if (!imapConfigured(cuenta)) {
+    await sb.rpc("ingest_mail", { p_secret: secret, p_rows: [], p_error: "IMAP sin configurar", p_slot: slot });
+    return send(res, 412, { ok: false, error: cuenta === "alejandro" ? "Falta ALEJANDRO_IMAP_PASSWORD en Vercel" : "Falta la contraseña IMAP de info@nexgent.io en Vercel" });
   }
 
   const rows = [];
   try {
     await withImap(async client => {
-      for (const folder of folders()) {
+      let list = folders();
+      if (cuenta === "alejandro") {
+        const boxes = await client.list();
+        const sent = boxes.find(b => b.specialUse === "\\Sent") || boxes.find(b => /(^|[./])sent$/i.test(b.path));
+        list = ["INBOX"].concat(sent ? [sent.path] : []);
+      }
+      for (const folder of list) {
         const lock = await client.getMailboxLock(folder);
         try {
           const since = new Date(Date.now() - DAYS * 864e5);
@@ -54,7 +63,8 @@ export default async function handler(req, res) {
               } catch {}
             }
             rows.push({
-              id: env.messageId || `${folder}:${m.uid}`,
+              id: (cuenta === "alejandro" ? "alejandro:" : "") + (env.messageId || `${folder}:${m.uid}`),
+              cuenta,
               received_at: new Date(m.internalDate || env.date || Date.now()).toISOString(),
               from_name: from.name || "",
               from_email: from.address || "",
@@ -68,13 +78,13 @@ export default async function handler(req, res) {
           }
         } finally { lock.release(); }
       }
-    });
+    }, cuenta);
   } catch (e) {
-    await sb.rpc("ingest_mail", { p_secret: secret, p_rows: [], p_error: e.message || "Error IMAP" });
+    await sb.rpc("ingest_mail", { p_secret: secret, p_rows: [], p_error: e.message || "Error IMAP", p_slot: slot });
     return send(res, e.status || 500, { ok: false, error: e.message || "Error leyendo el correo" });
   }
 
-  const { data, error } = await sb.rpc("ingest_mail", { p_secret: secret, p_rows: rows, p_error: null });
+  const { data, error } = await sb.rpc("ingest_mail", { p_secret: secret, p_rows: rows, p_error: null, p_slot: slot });
   if (error) return send(res, 500, { ok: false, error: "No se pudo guardar en Supabase" });
   return send(res, 200, { ok: true, rows: data?.rows ?? rows.length });
 }

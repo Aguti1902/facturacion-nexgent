@@ -34,6 +34,10 @@
     {
       "path": "/api/mail/invoices",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/mail/sync?cuenta=alejandro",
+      "schedule": "15 6 * * *"
     }
   ]
 }
